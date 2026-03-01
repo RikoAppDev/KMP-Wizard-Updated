@@ -1,3 +1,5 @@
+import { getSelectedLibs } from './libraryDefs.js'
+
 export function generateAmperBuild(zip, config) {
     const { projectName, projectId, targets } = config
 
@@ -69,43 +71,51 @@ ${modules.join('\n')}
 }
 
 function generateVersionCatalog(config) {
-    const { targets } = config
+    const { targets, dependencies } = config
+    const selectedLibs = getSelectedLibs(dependencies || {})
     let versions = `[versions]`
     let libraries = `\n[libraries]`
 
     if (targets.android?.enabled) {
-        versions += `
-androidx-activityCompose = "1.9.2"
-androidx-ui-tooling = "1.8.2"`
-        libraries += `
-androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
-androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview", version.ref = "androidx-ui-tooling" }`
+        versions += `\nandroidx-activityCompose = "1.9.2"\nandroidx-ui-tooling = "1.8.2"`
+        libraries += `\nandroidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }\nandroidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview", version.ref = "androidx-ui-tooling" }`
     }
 
     if (targets.desktop?.enabled) {
-        versions += `
-coroutines = "1.8.1"`
-        libraries += `
-kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }`
+        versions += `\ncoroutines = "1.8.1"`
+        libraries += `\nkotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }`
     }
 
     if (targets.server?.enabled) {
-        versions += `
-ktor = "3.0.3"
-logback = "1.5.6"`
-        libraries += `
-ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
-ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
-logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }`
+        versions += `\nktor = "3.0.3"\nlogback = "1.5.6"`
+        libraries += `\nktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }\nktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }\nlogback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }`
     }
 
-    return `${versions}
-${libraries}
-`
+    // Add selected library entries
+    const addedVersions = new Set()
+    for (const lib of selectedLibs) {
+        const a = lib.amper
+        if (a.versions) {
+            for (const v of a.versions) {
+                if (!addedVersions.has(v.key) && !versions.includes(v.key + ' =')) {
+                    versions += `\n${v.key} = "${v.value}"`
+                    addedVersions.add(v.key)
+                }
+            }
+        }
+        if (a.libraries) {
+            for (const l of a.libraries) {
+                libraries += `\n${l.key} = { module = "${l.module}", version.ref = "${l.versionRef}" }`
+            }
+        }
+    }
+
+    return `${versions}\n${libraries}\n`
 }
 
 function generateComposeAppModuleYaml(config) {
-    const { targets } = config
+    const { targets, dependencies } = config
+    const selectedLibs = getSelectedLibs(dependencies || {})
     const platforms = []
 
     if (targets.android?.enabled) platforms.push('android')
@@ -123,27 +133,33 @@ function generateComposeAppModuleYaml(config) {
         '  - $compose.material3',
     ]
 
+    // Add selected library deps
+    for (const lib of selectedLibs) {
+        if (lib.amper.deps) {
+            for (const dep of lib.amper.deps) {
+                deps.push(`  - ${dep}`)
+            }
+        }
+    }
+
     let extraSections = ''
 
     if (targets.desktop?.enabled) {
-        extraSections += `
-dependencies@jvm:
-  - $libs.kotlinx.coroutines.swing
-`
+        extraSections += `\ndependencies@jvm:\n  - $libs.kotlinx.coroutines.swing\n`
     }
 
-    return `# Compose Multiplatform Application
+    // Collect extra settings from selected libs
+    const extraSettings = []
+    for (const lib of selectedLibs) {
+        if (lib.amper.settings) {
+            extraSettings.push(...lib.amper.settings)
+        }
+    }
+    const settingsBlock = extraSettings.length > 0
+        ? `\nsettings:\n  compose: enabled\n${extraSettings.join('\n')}\n`
+        : `\nsettings:\n  compose: enabled\n`
 
-product:
-  type: lib
-  platforms: [${platforms.join(', ')}]
-
-dependencies:
-${deps.join('\n')}
-${extraSections}
-settings:
-  compose: enabled
-`
+    return `# Compose Multiplatform Application\n\nproduct:\n  type: lib\n  platforms: [${platforms.join(', ')}]\n\ndependencies:\n${deps.join('\n')}\n${extraSections}${settingsBlock}`
 }
 
 function generateAndroidAppModuleYaml(config) {

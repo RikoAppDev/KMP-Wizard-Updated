@@ -35,6 +35,12 @@
         <!-- Target Platforms -->
         <TargetPlatforms v-model:targets="targets" />
 
+        <!-- Dependencies -->
+        <DependencyPicker
+          :dependencies="dependencies"
+          @update:dependencies="val => dependencies = val"
+        />
+
         <!-- Download Button -->
         <div class="download-section">
           <button class="download-btn" @click="downloadProject" :disabled="!hasAnyTarget">
@@ -67,6 +73,7 @@ import { ref, computed, watch } from 'vue'
 import ProjectInfo from './components/ProjectInfo.vue'
 import BuildConfig from './components/BuildConfig.vue'
 import TargetPlatforms from './components/TargetPlatforms.vue'
+import DependencyPicker from './components/DependencyPicker.vue'
 import { generateProject } from './generator/projectGenerator.js'
 
 const projectName = ref('KotlinProject')
@@ -105,6 +112,8 @@ const targets = ref({
   server: { enabled: false },
 })
 
+const dependencies = ref({})
+
 const hasAnyTarget = computed(() => {
   return Object.values(targets.value).some(t => t.enabled)
 })
@@ -117,6 +126,7 @@ async function downloadProject() {
     buildSystem: buildSystem.value,
     agpVersion: agpVersion.value,
     targets: targets.value,
+    dependencies: dependencies.value,
   })
 }
 </script>

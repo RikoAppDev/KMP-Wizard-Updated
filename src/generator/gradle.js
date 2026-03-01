@@ -1,3 +1,5 @@
+import { getSelectedLibs } from './libraryDefs.js'
+
 const KOTLIN_VERSION = '2.1.10'
 const COMPOSE_PLUGIN_VERSION = '1.7.3'
 const AGP8_VERSION = '8.7.3'
@@ -5,20 +7,21 @@ const AGP9_VERSION = '9.0.1'
 const KTOR_VERSION = '3.0.3'
 
 export function generateGradleBuild(zip, config) {
-    const { projectName, projectId, agpVersion, targets } = config
+    const { projectName, projectId, agpVersion, targets, dependencies } = config
     const agpVer = agpVersion === '9' ? AGP9_VERSION : AGP8_VERSION
     const compileSdk = agpVersion === '9' ? 35 : 34
     const minSdk = agpVersion === '9' ? 24 : 21
     const targetSdk = compileSdk
+    const selectedLibs = getSelectedLibs(dependencies || {})
 
     // settings.gradle.kts
     zip.file('settings.gradle.kts', generateSettings(projectName, targets))
 
     // Root build.gradle.kts
-    zip.file('build.gradle.kts', generateRootBuild(agpVer, targets))
+    zip.file('build.gradle.kts', generateRootBuild(agpVer, targets, selectedLibs))
 
     // Version catalog
-    zip.file('gradle/libs.versions.toml', generateVersionCatalog(agpVer, targets))
+    zip.file('gradle/libs.versions.toml', generateVersionCatalog(agpVer, targets, selectedLibs))
 
     // gradle/wrapper
     zip.file('gradle/wrapper/gradle-wrapper.properties', generateGradleWrapper(agpVersion))
@@ -85,7 +88,7 @@ ${modules}
 `
 }
 
-function generateRootBuild(agpVer, targets) {
+function generateRootBuild(agpVer, targets, selectedLibs) {
     const plugins = [
         `    alias(libs.plugins.kotlinMultiplatform) apply false`,
         `    alias(libs.plugins.composeMultiplatform) apply false`,
@@ -102,10 +105,19 @@ function generateRootBuild(agpVer, targets) {
         plugins.push(`    alias(libs.plugins.ktor) apply false`)
     }
 
+    // Add plugins from selected libraries
+    for (const lib of selectedLibs) {
+        if (lib.gradle.rootPlugins) {
+            for (const pluginKey of lib.gradle.rootPlugins) {
+                plugins.push(`    alias(libs.plugins.${pluginKey}) apply false`)
+            }
+        }
+    }
+
     return `plugins {\n${plugins.join('\n')}\n}\n`
 }
 
-function generateVersionCatalog(agpVer, targets) {
+function generateVersionCatalog(agpVer, targets, selectedLibs) {
     const versions = [
         `kotlin = "${KOTLIN_VERSION}"`,
         `compose-plugin = "${COMPOSE_PLUGIN_VERSION}"`,
@@ -133,6 +145,30 @@ function generateVersionCatalog(agpVer, targets) {
         libraries.push(`ktor-server-netty = { module = "io.ktor:ktor-server-netty-jvm", version.ref = "ktor" }`)
     }
 
+    // Add selected library entries
+    const addedVersions = new Set()
+    for (const lib of selectedLibs) {
+        const g = lib.gradle
+        if (g.versions) {
+            for (const v of g.versions) {
+                if (!addedVersions.has(v.key) && !versions.some(s => s.startsWith(v.key + ' '))) {
+                    versions.push(`${v.key} = "${v.value}"`)
+                    addedVersions.add(v.key)
+                }
+            }
+        }
+        if (g.libraries) {
+            for (const l of g.libraries) {
+                libraries.push(`${l.key} = { module = "${l.module}", version.ref = "${l.versionRef}" }`)
+            }
+        }
+        if (g.plugins) {
+            for (const p of g.plugins) {
+                plugins.push(`${p.key} = { id = "${p.id}", version.ref = "${p.versionRef}" }`)
+            }
+        }
+    }
+
     let toml = `[versions]\n${versions.join('\n')}\n`
     if (libraries.length > 0) {
         toml += `\n[libraries]\n${libraries.join('\n')}\n`
@@ -154,7 +190,8 @@ zipStorePath=wrapper/dists
 }
 
 function generateSharedBuild(config, compileSdk, minSdk) {
-    const { targets } = config
+    const { targets, dependencies } = config
+    const selectedLibs = getSelectedLibs(dependencies || {})
     const targetBlocks = []
 
     if (targets.android?.enabled) {
@@ -185,6 +222,25 @@ function generateSharedBuild(config, compileSdk, minSdk) {
     if (targets.android?.enabled) {
         plugins.push(`    alias(libs.plugins.androidLibrary)`)
     }
+    // Add shared plugins from selected libraries
+    for (const lib of selectedLibs) {
+        if (lib.gradle.sharedPlugins) {
+            plugins.push(...lib.gradle.sharedPlugins)
+        }
+    }
+
+    // Collect commonMain deps from selected libraries
+    const extraDeps = []
+    for (const lib of selectedLibs) {
+        if (lib.gradle.commonDeps) {
+            for (const dep of lib.gradle.commonDeps) {
+                extraDeps.push(`            implementation(${dep})`)
+            }
+        }
+    }
+    const depsBlock = extraDeps.length > 0
+        ? `            // put your Multiplatform dependencies here\n${extraDeps.join('\n')}`
+        : `            // put your Multiplatform dependencies here`
 
     let androidBlock = ''
     if (targets.android?.enabled) {
@@ -210,7 +266,7 @@ ${targetBlocks.join('\n\n')}
 
     sourceSets {
         commonMain.dependencies {
-            // put your Multiplatform dependencies here
+${depsBlock}
         }
     }
 }${androidBlock}
@@ -218,7 +274,8 @@ ${targetBlocks.join('\n\n')}
 }
 
 function generateComposeAppBuild(config, compileSdk, minSdk, targetSdk) {
-    const { targets, projectId } = config
+    const { targets, projectId, dependencies } = config
+    const selectedLibs = getSelectedLibs(dependencies || {})
     const targetBlocks = []
     const plugins = [
         `    alias(libs.plugins.kotlinMultiplatform)`,
@@ -254,6 +311,24 @@ function generateComposeAppBuild(config, compileSdk, minSdk, targetSdk) {
             binaries.executable()
         }`)
     }
+
+    // Add composeApp plugins from selected libraries
+    for (const lib of selectedLibs) {
+        if (lib.gradle.composeAppPlugins) {
+            plugins.push(...lib.gradle.composeAppPlugins)
+        }
+    }
+
+    // Collect extra commonMain deps from selected libraries
+    const extraDeps = []
+    for (const lib of selectedLibs) {
+        if (lib.gradle.commonDeps) {
+            for (const dep of lib.gradle.commonDeps) {
+                extraDeps.push(`            implementation(${dep})`)
+            }
+        }
+    }
+    const extraDepsStr = extraDeps.length > 0 ? '\n' + extraDeps.join('\n') : ''
 
     let androidBlock = ''
     if (targets.android?.enabled) {
@@ -308,7 +383,7 @@ ${targetBlocks.join('\n\n')}
             implementation(compose.material3)
             implementation(compose.ui)
             implementation(compose.components.resources)
-            implementation(projects.shared)
+            implementation(projects.shared)${extraDepsStr}
         }${targets.desktop?.enabled ? `
 
         val desktopMain by getting {
