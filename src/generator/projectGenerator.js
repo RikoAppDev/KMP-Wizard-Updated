@@ -4,6 +4,7 @@ import { generateGradleBuild } from './gradle.js'
 import { generateAmperBuild } from './amper.js'
 import { generateSharedCode } from './sharedCode.js'
 import { generatePlatformCode } from './platformCode.js'
+import { generateCleanArchGradle, generateCleanArchAmper } from './cleanArch.js'
 
 export async function generateProject(config) {
     const zip = new JSZip()
@@ -21,9 +22,19 @@ export async function generateProject(config) {
 
         // Platform-specific code
         generatePlatformCode(zip, config, packagePath)
+
+        // Clean Architecture sample
+        if (config.generateSample) {
+            generateCleanArchGradle(zip, config, packagePath)
+        }
     } else {
         // Amper: self-contained — generates its own files, sources, and .gitignore
         generateAmperBuild(zip, config)
+
+        // Clean Architecture sample
+        if (config.generateSample) {
+            generateCleanArchAmper(zip, config)
+        }
     }
 
     const blob = await zip.generateAsync({ type: 'blob' })

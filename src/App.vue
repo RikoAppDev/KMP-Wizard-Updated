@@ -41,6 +41,20 @@
           @update:dependencies="val => dependencies = val"
         />
 
+        <!-- Sample Project Toggle -->
+        <div class="section sample-toggle-section">
+          <label class="sample-toggle">
+            <input type="checkbox" v-model="generateSample" />
+            <span class="toggle-track">
+              <span class="toggle-thumb"></span>
+            </span>
+            <div class="toggle-label">
+              <span class="toggle-title">Generate sample project</span>
+              <span class="toggle-desc">Clean Architecture with feature-based packages, MVI pattern, and sample code using selected libraries</span>
+            </div>
+          </label>
+        </div>
+
         <!-- Download Button -->
         <div class="download-section">
           <button class="download-btn" @click="downloadProject" :disabled="!hasAnyTarget">
@@ -113,6 +127,7 @@ const targets = ref({
 })
 
 const dependencies = ref({})
+const generateSample = ref(false)
 
 const hasAnyTarget = computed(() => {
   return Object.values(targets.value).some(t => t.enabled)
@@ -127,6 +142,7 @@ async function downloadProject() {
     agpVersion: agpVersion.value,
     targets: targets.value,
     dependencies: dependencies.value,
+    generateSample: generateSample.value,
   })
 }
 </script>
@@ -275,6 +291,80 @@ async function downloadProject() {
 
 .footer-links a:hover {
   text-decoration: underline;
+}
+
+/* Sample project toggle */
+.sample-toggle-section {
+  margin-bottom: 32px;
+}
+
+.sample-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: all 0.15s ease;
+}
+
+.sample-toggle:hover {
+  border-color: var(--text-muted);
+  background: var(--bg-card-hover);
+}
+
+.sample-toggle input {
+  display: none;
+}
+
+.toggle-track {
+  width: 44px;
+  height: 24px;
+  background: var(--border);
+  border-radius: 12px;
+  position: relative;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.sample-toggle input:checked + .toggle-track {
+  background: var(--accent);
+}
+
+.toggle-thumb {
+  width: 18px;
+  height: 18px;
+  background: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  transition: transform 0.2s ease;
+}
+
+.sample-toggle input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(20px);
+}
+
+.toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toggle-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.toggle-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 @media (max-width: 640px) {
